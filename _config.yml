@@ -1,11 +1,10 @@
 # Basic
 title: mirror6Y的博客
 email: 1766650501@qq.com
-description: >- # this means to ignore newlines until "baseurl:"
-  mirror6Y的个人博客
+# description: >- # this means to ignore newlines until "baseurl:"mirror6Y的个人博客
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
-github_username:  mirror6Y
+github_username: mirror6Y
 mail_username: 1766650501@qq.com
 
 # Build settings
