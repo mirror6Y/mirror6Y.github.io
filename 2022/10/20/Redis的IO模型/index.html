@@ -1,0 +1,241 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><title>Redis的I/O模型 | mirror6Y</title><meta name="author" content="艾伦"><meta name="copyright" content="艾伦"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="为什么单线程的Redis这么快？今天我们来看看RedisI&#x2F;O模型的实现。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Redis的I&#x2F;O模型">
+<meta property="og:url" content="https://mirror6y.github.io/2022/10/20/Redis%E7%9A%84IO%E6%A8%A1%E5%9E%8B/index.html">
+<meta property="og:site_name" content="mirror6Y">
+<meta property="og:description" content="为什么单线程的Redis这么快？今天我们来看看RedisI&#x2F;O模型的实现。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://s2.loli.net/2023/02/02/O2i4muc1wgxkPqI.jpg">
+<meta property="article:published_time" content="2022-10-20T00:00:00.000Z">
+<meta property="article:modified_time" content="2023-01-23T00:00:00.000Z">
+<meta property="article:author" content="艾伦">
+<meta property="article:tag" content="Redis">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://s2.loli.net/2023/02/02/O2i4muc1wgxkPqI.jpg"><link rel="shortcut icon" href="/img/favicon.png"><link rel="canonical" href="https://mirror6y.github.io/2022/10/20/Redis%E7%9A%84IO%E6%A8%A1%E5%9E%8B/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//busuanzi.ibruce.info"/><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css" media="print" onload="this.media='all'"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox.min.css" media="print" onload="this.media='all'"><script>const GLOBAL_CONFIG = { 
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.json","preload":false,"languages":{"hits_empty":"找不到您查询的内容：${query}"}},
+  translate: undefined,
+  noticeOutdate: undefined,
+  highlight: {"plugin":"highlighjs","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":false},
+  copy: {
+    success: '复制成功',
+    error: '复制错误',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '',
+  date_suffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'fancybox',
+  Snackbar: undefined,
+  source: {
+    justifiedGallery: {
+      js: 'https://cdn.jsdelivr.net/npm/flickr-justified-gallery/dist/fjGallery.min.js',
+      css: 'https://cdn.jsdelivr.net/npm/flickr-justified-gallery/dist/fjGallery.min.css'
+    }
+  },
+  isPhotoFigcaption: false,
+  islazyload: false,
+  isAnchor: false
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Redis的I/O模型',
+  isPost: true,
+  isHome: false,
+  isHighlightShrink: false,
+  isToc: true,
+  postUpdate: '2023-01-23 08:00:00'
+}</script><noscript><style type="text/css">
+  #nav {
+    opacity: 1
+  }
+  .justified-gallery img {
+    opacity: 1
+  }
+
+  #recent-posts time,
+  #post-meta time {
+    display: inline !important
+  }
+</style></noscript><script>(win=>{
+    win.saveToLocal = {
+      set: function setWithExpiry(key, value, ttl) {
+        if (ttl === 0) return
+        const now = new Date()
+        const expiryDay = ttl * 86400000
+        const item = {
+          value: value,
+          expiry: now.getTime() + expiryDay,
+        }
+        localStorage.setItem(key, JSON.stringify(item))
+      },
+
+      get: function getWithExpiry(key) {
+        const itemStr = localStorage.getItem(key)
+
+        if (!itemStr) {
+          return undefined
+        }
+        const item = JSON.parse(itemStr)
+        const now = new Date()
+
+        if (now.getTime() > item.expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return item.value
+      }
+    }
+  
+    win.getScript = url => new Promise((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = url
+      script.async = true
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function() {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    })
+  
+      win.activateDarkMode = function () {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      win.activateLightMode = function () {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+      const t = saveToLocal.get('theme')
+    
+          if (t === 'dark') activateDarkMode()
+          else if (t === 'light') activateLightMode()
+        
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        if (asideStatus === 'hide') {
+          document.documentElement.classList.add('hide-aside')
+        } else {
+          document.documentElement.classList.remove('hide-aside')
+        }
+      }
+    
+    const detectApple = () => {
+      if(/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)){
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+    })(window)</script><meta name="generator" content="Hexo 6.3.0"></head><body><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img is-center"><img src="https://s2.loli.net/2022/10/30/vmb6LFox37celjs.jpg" onerror="onerror=null;src='/img/friend_404.gif'" alt="avatar"/></div><div class="sidebar-site-data site-data is-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">5</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">5</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">4</div></a></div><hr/><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 主页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-archive"></i><span> 文章</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-heart"></i><span> 关于</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header" style="background-image: url('https://s2.loli.net/2023/02/02/O2i4muc1wgxkPqI.jpg')"><nav id="nav"><span id="blog_name"><a id="site-name" href="/">mirror6Y</a></span><div id="menus"><div id="search-button"><a class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> 搜索</span></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 主页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-archive"></i><span> 文章</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-heart"></i><span> 关于</span></a></div></div><div id="toggle-menu"><a class="site-page"><i class="fas fa-bars fa-fw"></i></a></div></div></nav><div id="post-info"><h1 class="post-title">Redis的I/O模型</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="far fa-calendar-alt fa-fw post-meta-icon"></i><span class="post-meta-label">发表于</span><time class="post-meta-date-created" datetime="2022-10-20T00:00:00.000Z" title="发表于 2022-10-20 08:00:00">2022-10-20</time><span class="post-meta-separator">|</span><i class="fas fa-history fa-fw post-meta-icon"></i><span class="post-meta-label">更新于</span><time class="post-meta-date-updated" datetime="2023-01-23T00:00:00.000Z" title="更新于 2023-01-23 08:00:00">2023-01-23</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E4%B8%AD%E9%97%B4%E4%BB%B6/">中间件</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-pv-cv" id="" data-flag-title="Redis的I/O模型"><i class="far fa-eye fa-fw post-meta-icon"></i><span class="post-meta-label">阅读量:</span><span id="busuanzi_value_page_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="post-content" id="article-container"><p>一次 I&#x2F;O 的读取请求分为两个阶段：</p>
+<ul>
+<li>等待内核空间准备数据</li>
+<li>数据从内核空间拷贝到用户空间</li>
+</ul>
+<p>《Unix网络编程》根据这两个阶段的不同把 I&#x2F;O 分成了以下五种 IO 模型：<br><img src="https://s2.loli.net/2023/02/02/sZimCHdFTUAb7pw.jpg" alt="阻塞I/O.jpeg"></p>
+<h2 id="网络I-x2F-O模型"><a href="#网络I-x2F-O模型" class="headerlink" title="网络I&#x2F;O模型"></a>网络I&#x2F;O模型</h2><h3 id="阻塞I-x2F-O"><a href="#阻塞I-x2F-O" class="headerlink" title="阻塞I&#x2F;O"></a>阻塞I&#x2F;O</h3><p><img src="https://s2.loli.net/2023/02/02/KdJDPfXC52olFvZ.jpg" alt="阻塞I/Ojpg"></p>
+<p>用户线程发起读取请求、等待内核空间准备数据、内核空间将数据拷贝到用户空间并返回给用户线程，这个过程用户线程一直处于等待的过程，不能处理其他任务。等待数据准备的阶段和拷贝数据的阶段都是阻塞的。<br>如果有其他用户线程发起请求，那么这些线程会排队等待，等前面的线程处理完再处理后面的线程。</p>
+<p>总结：适合用户线程数量不高的情况。如果用户线程数量过高， CPU 一次只处理一个线程，会影响 CPU 的性能。<br>优化：既然单线程效率低下，那么引入多线程进行优化怎么样？多线程可以解决 CPU 一次只能处理一个线程的问题，线程池也可以缓解一部分压力，但是用户线程的数量达到成千上万的时候，还是会有问题。因为线程池的维护也需要成本，比如线程的创建、销毁，上下文的切换，并不能从根本上解决问题。</p>
+<h3 id="非阻塞I-x2F-O"><a href="#非阻塞I-x2F-O" class="headerlink" title="非阻塞I&#x2F;O"></a>非阻塞I&#x2F;O</h3><p><img src="https://s2.loli.net/2023/02/02/vVfqrLcl1HAB8hG.jpg" alt="非阻塞I/O.jpg"></p>
+<p>用户线程发起读取请求，然后不断询问内核空间数据是否准备就绪。如果没有，用户线程会一直询问，直到内核空间数据准备就绪，然后内核空间将数据拷贝到用户空间并返回给用户线程。拷贝数据的阶段是阻塞的。</p>
+<p>总结：用户线程可以在等待数据的准备阶段处理其他的任务，但是需要不断询问内核空间数据是否已经准备就绪，从而导致 CPU 资源浪费，并且轮询之间的时间间隔会导致数据的延迟。</p>
+<h3 id="多路复用I-x2F-O"><a href="#多路复用I-x2F-O" class="headerlink" title="多路复用I&#x2F;O"></a>多路复用I&#x2F;O</h3><p><img src="https://s2.loli.net/2023/02/02/2aK73bNUfOcvDdi.jpg" alt="多路复用I/O.jpg"></p>
+<blockquote>
+<p>多路是指网络连接，复用指的是同一个线程</p>
+</blockquote>
+<p>用户线程调用 select 函数，然后 select 会对用户线程进行监听，不断询问内核空间用户线程的数据是否准备就绪，如果用户线程的数据准备就绪，会通知对应的用户线程。然后用户线程发起读取数据的请求，内核空间将数据拷贝到用户空间并返回给用户线程。<br>用户线程调用 select 函数之后，用户线程不会阻塞，但是select有可能阻塞，拷贝数据的阶段是阻塞的。</p>
+<p>总结：一个 select 函数可以同时监听多个用户线程，可以同时处理多个请求，从而提高 CPU 的效率。</p>
+<blockquote>
+<p>文件描述符（File Description）：简称FD，是一个从0开始递增的无符号整数，用来关联Linux系统中的一个文件。在Linux系统中，一切皆文件，例如常规文件、视频、硬件设备等，当然也包括网络套接字（Socket）。</p>
+</blockquote>
+<p>对 Linux 来说，一个用户线程相当于一个 FD 。</p>
+<p>I&#x2F;O 多路复用的实现有三种：</p>
+<ul>
+<li>select<br>select 不知道哪个 FD （用户线程）的数据准备就绪，所以会轮询所有的 FD ，性能随着 FD 数量的增加而下降。底层采用了数组，支持的 FD 数量有限，最多1024个。每次 select 都要把监听的所有 FD 拷贝到内核空间，影响效率。 windows 系统只支持这种方法， linux 系统也支持。</li>
+<li>poll<br>poll 和 select 实现类似，不过它底层采用了链表，支持的 FD 数量是没有限制。 linux 系统支持。</li>
+<li>epoll<br>epoll 底层采用了红黑树，理论上 FD 的数量是没有限制的，而且 CURD 的效率都很高，性能不会随着 FD 数量的增加而下降。 epoll 会将就绪的 FD 放到一个链表里，不用轮询所有的 FD 。</li>
+</ul>
+<h3 id="信号驱动I-x2F-O"><a href="#信号驱动I-x2F-O" class="headerlink" title="信号驱动I&#x2F;O"></a>信号驱动I&#x2F;O</h3><p><img src="https://s2.loli.net/2023/02/02/EL8V7xtTevlBNOy.jpg" alt="信号驱动I/O.jpg"></p>
+<p>用户线程发起读取请求前先建立一个信号函数说明它需要读取哪些数据，然后内核空间收到信号后并返回。内核空间数据就绪后会返回信号，信号函数进行处理。然后用户线程再发起读取请求，内核空间将数据拷贝到用户空间并返回给用户线程。拷贝数据的阶段是阻塞的。</p>
+<p>总结：用户线程过多的时候，产生的信号也很多， sigal 函数不能及时处理会导致信号队列溢出。其次用户空间和内核空间信号的频繁交互导致性能较低。在 Java 技术体系中使用场景很少。</p>
+<h3 id="异步I-x2F-O"><a href="#异步I-x2F-O" class="headerlink" title="异步I&#x2F;O"></a>异步I&#x2F;O</h3><p><img src="https://s2.loli.net/2023/02/02/WoIZkKu6QTwhiyJ.jpg" alt="异步I/O.jpg"></p>
+<p>用户线程发起读取请求，然后立即返回，用户线程可以处理其他的任务。内核空间接收到读取请求后，先准备数据，数据就绪后，内核空间将数据拷贝到用户空间并返回给用户线程。等待数据准备的阶段和拷贝数据的阶段都是不阻塞的。</p>
+<p>总结：异步 I&#x2F;O 模型是效率最高的，也是最理想的。不过它的实现比较复杂，高并发场景应用还不够广泛，不够成熟。 Netty 曾尝试使用异步 I&#x2F;O 模型，但是性能没有太多的提升就放弃了。</p>
+<h2 id="Redis的I-x2F-O模型"><a href="#Redis的I-x2F-O模型" class="headerlink" title="Redis的I&#x2F;O模型"></a>Redis的I&#x2F;O模型</h2><p>Redis 采用的是多路复用模型，基于 Reactor 模式设计的事件驱动模型。<br>Redis 中的事件分为两种：</p>
+<ul>
+<li>文件事件： Redis 服务器和客户端之间的网络 I&#x2F;O ，比如连接、读取、写入等。</li>
+<li>时间事件： Redis 服务器有一些定时任务，比如持久化。</li>
+</ul>
+<h3 id="文件事件"><a href="#文件事件" class="headerlink" title="文件事件"></a>文件事件</h3><p><img src="https://s2.loli.net/2023/02/02/1hFjYZ7oWscAlzw.jpg" alt="文件事件.jpg"></p>
+<p>socket 指的是客户端的连接、读取、写入等请求，本质上是一个 FD；<br>I&#x2F;O 多路复用程序负责创建，监听 FD ，绑定事件；<br>事件分发处理器根据事件类型将事件转发给对应的处理器；<br>处理器负责执行具体事件对应的任务操作。</p>
+<h4 id="连接请求"><a href="#连接请求" class="headerlink" title="连接请求"></a>连接请求</h4><p><img src="https://s2.loli.net/2023/02/02/eXgIltwU6Trf5VH.jpg" alt="连接请求.jpg"></p>
+<p>有 client socket 连接 server sokcet 的时会产生  ae_readable 事件，然后多路复用程序会创建 ssFD 并绑定 ae_readable 事件，根据事件类型转发给连接应答处理器。连接应答处理器接收 client socket 并创建 client socket FD（FD），然后由多路复用程序对其进行监听。</p>
+<h4 id="命令请求"><a href="#命令请求" class="headerlink" title="命令请求"></a>命令请求</h4><p><img src="https://s2.loli.net/2023/02/02/EYzq5lPtXkZbhMo.jpg" alt="UML 图 (7).jpg"></p>
+<p>client socket 执行 set 命令 时会产生 ae_readable 事件，然后多路复用程序会创建 FD 并绑定 ae_readable 事件，根据事件类型转发给命令请求处理器。命令请求处理器读取 FD 的数据，解析命令，与FD ae_writeable 事件进行绑定，然后由多路复用程序对其进行监听。（黄色背景）<br>多路复用程序监听到 FD 的 ae_writeable 事件后，根据事件类型转发给命令回复处理器。命令回复处理器将数据写入并返回 client socket 。（绿色背景）</p>
+<h3 id="时间事件"><a href="#时间事件" class="headerlink" title="时间事件"></a>时间事件</h3><p>Redis 将所有时间事件都放在一个无序链表中，每次 Redis 会遍历整个链表，查找所有已经到达的时间事件，并且调用相应的事件处理器。</p>
+<p>参考资料：</p>
+<p><a target="_blank" rel="noopener" href="https://juejin.cn/post/6882984260672847879#heading-7">掘金</a><br><a target="_blank" rel="noopener" href="https://www.bilibili.com/video/BV1cr4y1671t?p=171&vd_source=5ecb21a9c2d5bed6b9e12a0726087431">B站黑马</a></p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta">文章作者: </span><span class="post-copyright-info"><a href="https://mirror6y.github.io">艾伦</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta">文章链接: </span><span class="post-copyright-info"><a href="https://mirror6y.github.io/2022/10/20/Redis%E7%9A%84IO%E6%A8%A1%E5%9E%8B/">https://mirror6y.github.io/2022/10/20/Redis%E7%9A%84IO%E6%A8%A1%E5%9E%8B/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta">版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来自 <a href="https://mirror6y.github.io" target="_blank">mirror6Y</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Redis/">Redis</a></div><div class="post_share"><div class="social-share" data-image="https://s2.loli.net/2023/02/02/O2i4muc1wgxkPqI.jpg" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><div class="prev-post pull-left"><a href="/2023/02/08/%E9%A3%9E%E7%8C%AA-%E9%9D%A2%E8%AF%95%E6%94%B6%E8%8E%B7/"><img class="prev-cover" src="https://s2.loli.net/2022/10/31/4uOzSbvKmcwMWXY.jpg" onerror="onerror=null;src='/img/404.jpg'" alt="cover of previous post"><div class="pagination-info"><div class="label">上一篇</div><div class="prev_info">飞猪面试收获</div></div></a></div><div class="next-post pull-right"><a href="/2021/06/20/%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BC%96%E7%A0%81/"><img class="next-cover" src="https://s2.loli.net/2022/10/31/4uOzSbvKmcwMWXY.jpg" onerror="onerror=null;src='/img/404.jpg'" alt="cover of next post"><div class="pagination-info"><div class="label">下一篇</div><div class="next_info">计算机编码</div></div></a></div></nav><hr/><div id="post-comment"><div class="comment-head"><div class="comment-headline"><i class="fas fa-comments fa-fw"></i><span> 评论</span></div></div><div class="comment-wrap"><div><div id="twikoo-wrap"></div></div></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info"><div class="is-center"><div class="avatar-img"><img src="https://s2.loli.net/2022/10/30/vmb6LFox37celjs.jpg" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="author-info__name">艾伦</div><div class="author-info__description"></div></div><div class="card-info-data site-data is-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">5</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">5</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">4</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://github.com/mirror6Y"><i class="fab fa-github"></i><span>GitHub 传送门</span></a></div><div class="card-widget card-announcement"><div class="item-headline"><i class="fas fa-bullhorn fa-shake"></i><span>公告</span></div><div class="announcement_content">ZnSo₄ + Mg = MgSo₄ + Zn</div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%BD%91%E7%BB%9CI-x2F-O%E6%A8%A1%E5%9E%8B"><span class="toc-number">1.</span> <span class="toc-text">网络I&#x2F;O模型</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E9%98%BB%E5%A1%9EI-x2F-O"><span class="toc-number">1.1.</span> <span class="toc-text">阻塞I&#x2F;O</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E9%9D%9E%E9%98%BB%E5%A1%9EI-x2F-O"><span class="toc-number">1.2.</span> <span class="toc-text">非阻塞I&#x2F;O</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%A4%9A%E8%B7%AF%E5%A4%8D%E7%94%A8I-x2F-O"><span class="toc-number">1.3.</span> <span class="toc-text">多路复用I&#x2F;O</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E4%BF%A1%E5%8F%B7%E9%A9%B1%E5%8A%A8I-x2F-O"><span class="toc-number">1.4.</span> <span class="toc-text">信号驱动I&#x2F;O</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%BC%82%E6%AD%A5I-x2F-O"><span class="toc-number">1.5.</span> <span class="toc-text">异步I&#x2F;O</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Redis%E7%9A%84I-x2F-O%E6%A8%A1%E5%9E%8B"><span class="toc-number">2.</span> <span class="toc-text">Redis的I&#x2F;O模型</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%96%87%E4%BB%B6%E4%BA%8B%E4%BB%B6"><span class="toc-number">2.1.</span> <span class="toc-text">文件事件</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%E8%BF%9E%E6%8E%A5%E8%AF%B7%E6%B1%82"><span class="toc-number">2.1.1.</span> <span class="toc-text">连接请求</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#%E5%91%BD%E4%BB%A4%E8%AF%B7%E6%B1%82"><span class="toc-number">2.1.2.</span> <span class="toc-text">命令请求</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%97%B6%E9%97%B4%E4%BA%8B%E4%BB%B6"><span class="toc-number">2.2.</span> <span class="toc-text">时间事件</span></a></li></ol></li></ol></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item"><a class="thumbnail" href="/2024/01/20/%E6%90%AD%E5%BB%BARocketMQ5.X/" title="搭建RocketMQ5.X"><img src="https://s2.loli.net/2022/10/31/Gm8ISfLNknHi1rc.jpg" onerror="this.onerror=null;this.src='/img/404.jpg'" alt="搭建RocketMQ5.X"/></a><div class="content"><a class="title" href="/2024/01/20/%E6%90%AD%E5%BB%BARocketMQ5.X/" title="搭建RocketMQ5.X">搭建RocketMQ5.X</a><time datetime="2024-01-20T00:00:00.000Z" title="发表于 2024-01-20 08:00:00">2024-01-20</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/2023/02/08/%E9%A3%9E%E7%8C%AA-%E9%9D%A2%E8%AF%95%E6%94%B6%E8%8E%B7/" title="飞猪面试收获"><img src="https://s2.loli.net/2022/10/31/4uOzSbvKmcwMWXY.jpg" onerror="this.onerror=null;this.src='/img/404.jpg'" alt="飞猪面试收获"/></a><div class="content"><a class="title" href="/2023/02/08/%E9%A3%9E%E7%8C%AA-%E9%9D%A2%E8%AF%95%E6%94%B6%E8%8E%B7/" title="飞猪面试收获">飞猪面试收获</a><time datetime="2023-02-08T00:00:00.000Z" title="发表于 2023-02-08 08:00:00">2023-02-08</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/2022/10/20/Redis%E7%9A%84IO%E6%A8%A1%E5%9E%8B/" title="Redis的I/O模型"><img src="https://s2.loli.net/2023/02/02/O2i4muc1wgxkPqI.jpg" onerror="this.onerror=null;this.src='/img/404.jpg'" alt="Redis的I/O模型"/></a><div class="content"><a class="title" href="/2022/10/20/Redis%E7%9A%84IO%E6%A8%A1%E5%9E%8B/" title="Redis的I/O模型">Redis的I/O模型</a><time datetime="2022-10-20T00:00:00.000Z" title="发表于 2022-10-20 08:00:00">2022-10-20</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/2021/06/20/%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BC%96%E7%A0%81/" title="计算机编码"><img src="https://s2.loli.net/2022/10/31/4uOzSbvKmcwMWXY.jpg" onerror="this.onerror=null;this.src='/img/404.jpg'" alt="计算机编码"/></a><div class="content"><a class="title" href="/2021/06/20/%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BC%96%E7%A0%81/" title="计算机编码">计算机编码</a><time datetime="2021-06-20T00:00:00.000Z" title="发表于 2021-06-20 08:00:00">2021-06-20</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/2021/05/10/%E6%8A%98%E8%80%B3%E6%A0%B9%EF%BC%8C%E4%BB%8E%E5%85%A5%E9%97%A8%E5%88%B0%E6%94%BE%E5%BC%83/" title="折耳根，从入门到放弃"><img src="https://s2.loli.net/2022/10/31/Gm8ISfLNknHi1rc.jpg" onerror="this.onerror=null;this.src='/img/404.jpg'" alt="折耳根，从入门到放弃"/></a><div class="content"><a class="title" href="/2021/05/10/%E6%8A%98%E8%80%B3%E6%A0%B9%EF%BC%8C%E4%BB%8E%E5%85%A5%E9%97%A8%E5%88%B0%E6%94%BE%E5%BC%83/" title="折耳根，从入门到放弃">折耳根，从入门到放弃</a><time datetime="2021-05-10T00:00:00.000Z" title="发表于 2021-05-10 08:00:00">2021-05-10</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap"><div class="copyright">&copy;2020 - 2024 By 艾伦</div><div class="framework-info"><span>框架 </span><a target="_blank" rel="noopener" href="https://hexo.io">Hexo</a><span class="footer-separator">|</span><span>主题 </span><a target="_blank" rel="noopener" href="https://github.com/jerryc127/hexo-theme-butterfly">Butterfly</a></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="浅色和深色模式转换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside_config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><a id="to_comment" href="#post-comment" title="直达评论"><i class="fas fa-comments"></i></a><button id="go-up" type="button" title="回到顶部"><i class="fas fa-arrow-up"></i></button></div></div><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="is-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据库加载中</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="搜索文章" type="text"/></div></div><hr/><div id="local-search-results"></div></div></div><div id="search-mask"></div></div><div><script src="/js/utils.js"></script><script src="/js/main.js"></script><script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox.umd.min.js"></script><script src="/js/search/local-search.js"></script><div class="js-pjax"><script>(()=>{
+  const init = () => {
+    twikoo.init(Object.assign({
+      el: '#twikoo-wrap',
+      envId: 'https://twikoo-mirror6y.vercel.app/',
+      region: 'ap-hangzhou"',
+      onCommentLoaded: function () {
+        btf.loadLightbox(document.querySelectorAll('#twikoo .tk-content img:not(.tk-owo-emotion)'))
+      }
+    }, null))
+  }
+
+  const getCount = () => {
+    const countELement = document.getElementById('twikoo-count')
+    if(!countELement) return
+    twikoo.getCommentsCount({
+      envId: 'https://twikoo-mirror6y.vercel.app/',
+      region: 'ap-hangzhou"',
+      urls: [window.location.pathname],
+      includeReply: false
+    }).then(function (res) {
+      countELement.innerText = res[0].count
+    }).catch(function (err) {
+      console.error(err);
+    });
+  }
+
+  const runFn = () => {
+    init()
+    GLOBAL_CONFIG_SITE.isPost && getCount()
+  }
+
+  const loadTwikoo = () => {
+    if (typeof twikoo === 'object') {
+      setTimeout(runFn,0)
+      return
+    } 
+    getScript('https://cdn.jsdelivr.net/npm/twikoo/dist/twikoo.all.min.js').then(runFn)
+  }
+
+  if ('Twikoo' === 'Twikoo' || !true) {
+    if (true) btf.loadComment(document.getElementById('twikoo-wrap'), loadTwikoo)
+    else loadTwikoo()
+  } else {
+    window.loadOtherComment = () => {
+      loadTwikoo()
+    }
+  }
+})()</script></div><script async data-pjax src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script></div><script src="/live2dw/lib/L2Dwidget.min.js?094cbace49a39548bed64abff5988b05"></script><script>L2Dwidget.init({"model":{"jsonPath":"/live2dw/assets/haruto.model.json"},"display":{"position":"left"},"mobile":{"show":false},"log":false,"pluginJsPath":"lib/","pluginModelPath":"assets/","pluginRootPath":"live2dw/","tagMode":false});</script></body></html>
